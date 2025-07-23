@@ -68,7 +68,8 @@ UPDATE_LISTING = False
 DEBUG = SETTINGS.getSetting('Enable_Debugging') == 'true'
 DEBUG_CODE = SETTINGS.getSetting('Debug')
 
-ANDROID_USER_AGENT = 'SlingTV/6.17.9 (Linux;Android 10) ExoPlayerLib/2.7.1'
+#ANDROID_USER_AGENT = 'SlingTV/6.17.9 (Linux;Android 10) ExoPlayerLib/2.7.1'
+ANDROID_USER_AGENT = "Sling%20TV/8.4.5.444191 CFNetwork/1485 Darwin/23.1.0"
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' \
              'Chrome/69.0.3497.100 Safari/537.36'
 
@@ -118,6 +119,10 @@ def okDialog(str1, str2='', str3='', header=ADDON_NAME):
 
 def yesNoDialog(str1, header=ADDON_NAME, yes='', no='', autoclose=0):
     return xbmcgui.Dialog().yesno(header, str1, no, yes, autoclose)
+
+
+def yesNoCustomDialog(msg, header=ADDON_NAME, custom='', yes='', no='', autoclose=0):
+    return xbmcgui.Dialog().yesnocustom(header, msg, custom, no, yes, autoclose)
 
 
 def notificationDialog(message, header=ADDON_NAME, sound=False, time=1000, icon=ICON):

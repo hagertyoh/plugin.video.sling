@@ -501,10 +501,13 @@ def assetJSON(self, myjson, asset):
                 asset['Show_Name'] = myjson['title']
         if asset['Type'] == 'Asset' and asset['Show_GUID'] != '' and 'guid' in program:
             asset['GUID'] = program['guid']
-        if 'background_image' in program:
-            if 'url' in program['background_image']:
-                if asset['Poster'] == ICON and program['background_image']['url'] is not None:
-                    asset['Poster'] = program['background_image']['url']
+        try:
+            if 'background_image' in program:
+                if 'url' in program['background_image']:
+                    if asset['Poster'] == ICON and program['background_image']['url'] is not None:
+                        asset['Poster'] = program['background_image']['url']
+        except:
+            pass
         if 'description' in program:
             if program['description'] != '':
                 asset['Description'] = program['description']

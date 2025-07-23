@@ -46,11 +46,11 @@ class Auth(object):
 
         auth = OAuth1(self.OCK, self.OCS, self.OTK, self.OTS)
         user_headers = HEADERS
-        try:
-            user_headers.pop('Content-Type')
-        except:
-            pass
+        user_headers.pop('Content-Type', None)
         response = requests.get(USER_INFO_URL, headers=user_headers, auth=auth, verify=VERIFY)
+        xbmc.log("-------------------------------------------------------------")
+        xbmc.log(f"{response.text}")
+        xbmc.log("-------------------------------------------------------------")
         if response.status_code == 200:
             response_json = response.json()
             if 'email' in response_json:
@@ -189,7 +189,8 @@ class Auth(object):
         payload = "email=%s&password=%s&device_guid=%s" % (requests.utils.quote(
             USER_EMAIL), requests.utils.quote(USER_PASSWORD), requests.utils.quote(DEVICE_ID))
         account_headers = HEADERS
-        account_headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        account_headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8'
+        account_headers['User-Agent'] = ANDROID_USER_AGENT
         auth = OAuth1(self.OCK, self.OCS)
         response = requests.put('%s/v3/xauth/access_token.json' %
                                 endPoints['ums_url'], headers=account_headers, data=payload, auth=auth, verify=VERIFY)
@@ -207,27 +208,15 @@ class Auth(object):
             log('auth::getOTK() Failed to retrieve OAuth token')
             return False, 'Failed to retrieve user OAuth token %i' % response.status_code
 
-    def logIn(self, endPoints, email=USER_EMAIL, password=USER_PASSWORD):
+    def paidLogin(self, endPoints):
         global USER_EMAIL, USER_PASSWORD
         log('auth::logIn() Email: %s' % email[:5])
-        
-        # Check if already logged in
-        status, message, json_data = self.loggedIn()
-        log("auth::logIn() => Already loggedIn() %r, %s" % (status, message))
-        if status: return status, 'Already logged in.'
-
-        # First launch, credentials empty
-        if email == '' or password == '':
-            # firstrun wizard
-            if yesNoDialog(LANGUAGE(30006), no=LANGUAGE(30004), yes=LANGUAGE(30005)):
-                email = inputDialog(LANGUAGE(30002))
-                password = inputDialog(LANGUAGE(30003), opt=xbmcgui.ALPHANUM_HIDE_INPUT)
-                SETTINGS.setSetting('User_Email', email)
-                SETTINGS.setSetting('User_Password', password)
-                USER_EMAIL = email
-                USER_PASSWORD = password
-            else:
-                return False, 'Login Aborted'
+        email = inputDialog(LANGUAGE(30002))
+        password = inputDialog(LANGUAGE(30003), opt=xbmcgui.ALPHANUM_HIDE_INPUT)
+        SETTINGS.setSetting('User_Email', email)
+        SETTINGS.setSetting('User_Password', password)
+        USER_EMAIL = email
+        USER_PASSWORD = password
 
         # Check if account exists
         payload = {
@@ -243,14 +232,15 @@ class Auth(object):
             }
         }
         auth = OAuth1(self.OCK, self.OCS)
-        response = requests.post('%s/user/lookup' % endPoints['extauth_url'], headers=HEADERS, data=json.dumps(payload), auth=auth, verify=VERIFY)
+        response = requests.post('%s/user/lookup' % endPoints['extauth_url'], headers=HEADERS, data=json.dumps(payload),
+                                 auth=auth, verify=VERIFY)
         response_json = response.json()
-        
+
         if response.status_code == 200:
             log('auth::logIn() =>\r%s' % json.dumps(response_json['response_context'], indent=4))
             if 'response' in response_json:
                 account = response_json['response']
-                if account['account_status'] == 'active':
+                if 'guid' in account:
                     SUBSCRIBER_ID = account['guid']
                     SETTINGS.setSetting('subscriber_id', SUBSCRIBER_ID)
 
@@ -272,6 +262,69 @@ class Auth(object):
         else:
             self.logOut()
             return False, 'Unable to validate account'
+
+    def prospectLogin(self, endPoints):
+        global SUBSCRIBER_ID, USER_EMAIL
+        log('auth::prospectLogin()')
+        self.deviceID()
+        self.getAccess()
+
+        payload = {"deviceGuid": DEVICE_ID}
+        account_headers = HEADERS
+        account_headers['Content-Type'] = 'application/json; charset=UTF-8'
+        account_headers['User-Agent'] = ANDROID_USER_AGENT
+        auth = OAuth1(self.OCK, self.OCS)
+        response = requests.post(f"{endPoints['extauth_url']}/user/prospect",
+                                 headers=account_headers, json=payload, auth=auth, verify=VERIFY)
+        response_json = response.json()
+
+        xbmc.log("-------------------------------------------------------------")
+        xbmc.log(f"{response_json}")
+        xbmc.log("-------------------------------------------------------------")
+
+        if response.ok and 'statusMessage' in response_json and response_json['statusMessage'].lower() == 'successful':
+            user_info = response_json['response']['userInfo']
+            self.OTK = user_info['accessToken']
+            self.OTS = user_info['accessSecret']
+            self.OTL = 'NO-LONGER-IN-USE'
+            log('auth::getOTK() Got OAuth tokens')
+            SUBSCRIBER_ID = user_info['userGuid']
+            SETTINGS.setSetting('subscriber_id', SUBSCRIBER_ID)
+
+            self.setAccess()
+            # Set Prospect Email
+            auth = OAuth1(self.OCK, self.OCS, self.OTK, self.OTS)
+            user_headers = HEADERS
+            user_headers.pop('Content-Type', None)
+            response = requests.get(USER_INFO_URL, headers=user_headers, auth=auth, verify=VERIFY)
+            if response.ok:
+                USER_EMAIL = response.json()["email"]
+                SETTINGS.setSetting('User_Email', USER_EMAIL)
+            return True, 'Free Account Created successfully'
+        else:
+            log('auth::getOTK() Failed to retrieve OAuth token')
+            return False, 'Failed to retrieve user OAuth token %i' % response.status_code
+
+    def logIn(self, endPoints, email=USER_EMAIL, password=USER_PASSWORD):
+        # Check if already logged in
+        status, message, json_data = self.loggedIn()
+        log("auth::logIn() => Already loggedIn() %r, %s" % (status, message))
+        if status: return status, 'Already logged in.'
+
+        # First launch, credentials empty
+        if email == '' or password == '':
+            # firstrun wizard
+            answer = yesNoCustomDialog(LANGUAGE(30006), custom="Stream Free", no=LANGUAGE(30004), yes=LANGUAGE(30005))
+            if answer == 1:
+                result, msg = self.paidLogin(endPoints)
+            elif answer == 2:
+                #Free Stream
+                result, msg = self.prospectLogin(endPoints)
+            else:
+                result = False
+                msg = 'Login Aborted'
+
+        return result, msg
 
     def logOut(self):
         SETTINGS.setSetting('access_token', '')
